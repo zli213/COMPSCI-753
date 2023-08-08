@@ -1,151 +1,227 @@
-import matplotlib.pyplot as plt
-from collections import defaultdict
-from sklearn.feature_extraction.text import CountVectorizer
-from random import randint
-import random
-import numpy as np
+import time
 import pandas as pd
-import dask.dataframe as dd
+from collections import defaultdict
+from random import randint
+import numpy as np
+import matplotlib.pyplot as plt
 
-
-def count_articles(filename):
-    df = dd.read_csv(filename, sep='\t', header=None)
-    num_articles = df[0].nunique().compute()
-    return num_articles
-
-
-def count_features(filename):
-    df = dd.read_csv(filename, sep='\t', header=None)
-    # Subtract 1 because one column is the article
-    num_features = len(df.columns) - 1
-    return num_features
-
-
-# data set of features
-def extract_features(filename):
-    # 读取文件，分隔符为制表符
-    df = pd.read_csv(filename, sep='\t', header=None)
-
-    # 提取特征列（从第二列到倒数第二列）
-    features = df.iloc[:, 1:-1]
-
-    # 将特征转换为整数，并将其作为列表的列表返回
-    return features.astype(int).values.T.tolist()
-
-
-# 示例调用，假设文件名为'bitvector_all_1gram.csv'
+# A. Load data and construct feature vectors
 filename = 'bitvector_all_1gram.csv'
-data = extract_features(filename)
+df = pd.read_csv(filename, sep='\t', header=None)
+features = df.iloc[:, 1:-1].astype(int).values.T.tolist()
+num_articles = len(features[0]) if features else 0
+num_features = len(features)
+print(f"Number of articles: {num_articles}")
+print(f"Number of features: {num_features}")
 
-# # 获取data的行数和列数
-num_rows = len(data)
-num_columns = len(data[0]) if data else 0
-
-# # 打印结果
-# print("竖排打印的行数:", num_rows)  # 打印特征数量
-# print("一排的列数:", num_columns)  # 打印样本数量
-
-print(f"Number of articles: {num_columns}")
-print(f"Number of features: {num_rows}")
+# B. Construct a family of MinHash functions
 
 
-# Define the hash function
-
-def hash_function(a, b, n_buckets, x):
-    hash_val = (a*x + b)
-    return hash_val % n_buckets
-
-
-def minhash(data, hashfuncs):
-    rows, cols, sigrows = num_rows, num_columns, len(hashfuncs)
-    sigmatrix = [[float('inf')] * cols for _ in range(sigrows)]
-
-    for r in range(rows):
-        hashvalue = [h(r) for h in hashfuncs]
-        for c in range(cols):
-            if data[r][c] == 0:
-                continue
-            for i in range(sigrows):
-                if sigmatrix[i][c] > hashvalue[i]:
-                    sigmatrix[i][c] = hashvalue[i]
-
-    return sigmatrix
+def is_prime(num):
+    """Check if a number is prime."""
+    if num < 2:
+        return False
+    for i in range(2, int(num**0.5) + 1):
+        if num % i == 0:
+            return False
+    return True
 
 
-def create_hash_functions(k, p):
+def create_hash_functions(k, n):
+    # Find a prime number p that is greater than n
+    p = n + 1
+    while not is_prime(p):
+        p += 1
     hash_funcs = []
-    for i in range(k):
-        a = randint(1, p-1)
-        b = randint(1, p-1)
-        hash_funcs.append(lambda x, a=a, b=b: (a * x + b) % p)
+    for _ in range(k):
+        a = randint(0, p-1)
+        b = randint(0, p-1)
+        def func(x, a=a, b=b): return ((a * x + b) % p) % n
+        hash_funcs.append((func, a, b))
     return hash_funcs
 
 
-# Generate hash functions for k in {2, 4, 8, 16}
 ks = [2, 4, 8, 16]
-hash_families = {k: create_hash_functions(k, num_rows) for k in ks}
+hash_families = {k: create_hash_functions(k, num_features) for k in ks}
 
-# You can then use these hash functions in your minhash function
-for k, hash_funcs in hash_families.items():
-    sigmatrix = minhash(data, hash_funcs)
-    # print signature matrix
-    print(np.array(sigmatrix))
-    print(f"Signature matrix shape: {np.array(sigmatrix).shape}")
+for col in range(len(features[0])):  # 遍历每一列（即每个文档）
+    for row in range(len(features)):  # 遍历每一行（即每个特征或shingle）
+        if features[row][col] == 1:
+            for k, hash_funcs in hash_families.items():
+                print(f"MinHash functions for k={k}, document={col}:")
+                for func, a, b in hash_funcs:
+                    h_value = func(row)
+                    print(
+                        f"Function with a={a}, b={b} gives h={h_value} for x={row}")
 
-
-# 定义参数
-m = 600
-k = 2
-
-# 假设sigmatrix是你的签名矩阵
-rows, cols = len(sigmatrix), len(sigmatrix[0])
-
-# 生成随机哈希函数
+# C. Construct LSH hash tables
 
 
-def generate_hash_functions(k, m):
-    import random
-    return [(random.randint(1, m - 1), random.randint(0, m - 1)) for _ in range(k)]
-
-
-hash_funcs = generate_hash_functions(k, m)
-
-# 构造LSH哈希表
-
-
-def lsh_hashing(sigmatrix, hash_funcs, m):
-    hash_tables = [defaultdict(list) for _ in range(k)]
+def minhash(data, hashfuncs):
+    rows, cols = num_features, num_articles
+    sigmatrix = [[float('inf')] * cols for _ in range(len(hashfuncs))]
     for c in range(cols):
-        for i, (a, b) in enumerate(hash_funcs):
-            bucket_id = (a * sum(sigmatrix[j][c] for j in range(rows)) + b) % m
+        for r in range(rows):
+            if data[r][c] == 0:
+                continue
+            for i, (h, a, b) in enumerate(hashfuncs):
+                hash_val = h(r)
+                if sigmatrix[i][c] > hash_val:
+                    sigmatrix[i][c] = hash_val
+    return sigmatrix
+
+
+def create_level_2_hash_functions(k, num_features, m):
+    p = num_features + 1
+    while not is_prime(p):
+        p += 1
+    hash_funcs = []
+    for _ in range(k):
+        # For c_{i,0}, it can be between 0 and p-1
+        c_0 = randint(0, p-1)
+        # For other coefficients, they should be between 1 and p-1
+        coefficients = [randint(1, p-1) for _ in range(k)]
+        coefficients.insert(0, c_0)  # Inserting c_{i,0} at the beginning
+
+        def hash_func(x, coefficients=coefficients):
+            assert len(x) == len(
+                coefficients) - 1, f"Length mismatch: x has {len(x)} elements, coefficients has {len(coefficients)} elements"
+            return (sum(coefficients[i+1] * x[i] for i in range(len(x))) + coefficients[0]) % p % m
+        hash_funcs.append((hash_func, coefficients))
+    return hash_funcs
+
+
+def lsh_hashing(sigmatrix, m, k):
+
+    hash_functions = create_level_2_hash_functions(k, num_features, m)
+
+    hash_tables = [defaultdict(list) for _ in range(k)]
+    for c in range(len(sigmatrix[0])):  # 遍历每一列（即每个文档）
+        column_data = [sigmatrix[j][c]
+                       for j in range(len(sigmatrix))]  # 获取整列数据
+        for i, (hash_func, _) in enumerate(hash_functions):
+            # 使用完整的列数据计算bucket_id
+            bucket_id = hash_func(column_data)
             hash_tables[i][bucket_id].append(c)
     return hash_tables
 
 
-hash_tables = lsh_hashing(sigmatrix, hash_funcs, m)
+m = 600
+k = 2
+hash_funcs = hash_families[k]
+sigmatrix = minhash(features, hash_funcs)
+hash_tables = lsh_hashing(sigmatrix, m, k)
+print(
+    f"Signature matrix shape: {len(sigmatrix)} rows, {len(sigmatrix[0])} columns")
 
-# 报告签名矩阵的维度
-print("签名矩阵的行数:", rows)
-print("签名矩阵的列数（文章数量）:", cols)
-
-# 选择要分析的哈希表
-hash_table = hash_tables[1]
-
-# 计算碰撞分布
-collision_distribution = [len(articles) for articles in hash_table.values()]
-
-# 使用matplotlib绘制直方图
-
+# D. Compute collision distribution
+collision_distribution = [len(articles)
+                          for table in hash_tables for articles in table.values()]
 plt.hist(collision_distribution, bins=range(
-    0, max(collision_distribution) + 1), edgecolor='black')
+    1, max(collision_distribution) + 1), edgecolor='black')
 plt.title('Collision Distribution of Articles into Buckets')
 plt.xlabel('Number of Colliding Articles')
 plt.ylabel('Frequency')
-plt.xticks(range(0, max(collision_distribution) + 1))
 plt.show()
 
-# 汇报桶中文章的总和
-total_articles = sum(collision_distribution)
-print("Total number of articles across buckets:", total_articles)
+print("Total number of articles across buckets:", sum(collision_distribution))
 
-# 在这里添加你对碰撞分布的分析和评论
+# 2. Nearest neighbor search
+
+
+def jaccard_similarity(set1, set2):
+    return len(set1.intersection(set2)) / len(set1.union(set2))
+
+
+Q = [4996, 4997, 4998, 4999, 5000]
+movie_genre = pd.Series(df.iloc[:, -1].values, index=df.iloc[:, 0]).to_dict()
+
+# Pre-compute feature sets for all articles
+feature_sets = [set([i for i, x in enumerate(article) if x == 1])
+                for article in zip(*features)]
+
+# A. Estimated Jaccard similarity
+for q in Q:
+    Dq = set()
+    for table in hash_tables:
+        for bucket in table.values():
+            if q in bucket:
+                Dq.update(bucket)
+    similarities = [
+        (d + 1, jaccard_similarity(feature_sets[q-1], feature_sets[d-1])) for d in Dq]
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    print(
+        f"Top 5 articles for query {q} based on estimated Jaccard similarity:")
+    for movie_id, sim in similarities[:5]:
+        print(f"{movie_id}\t{sim}\t{movie_genre[movie_id]}")
+
+# B. True Jaccard similarity
+for q in Q:
+    similarities = [(d + 1, jaccard_similarity(feature_sets[q-1], feature_sets[d-1]))
+                    for d in range(num_articles)]
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    print(f"Top 5 articles for query {q} based on true Jaccard similarity:")
+    for movie_id, sim in similarities[:5]:
+        print(f"{movie_id}\t{sim}\t{movie_genre[movie_id]}")
+
+
+# Compute MAE for different values of k
+Q = list(range(4000, 5001))
+maes = []
+for k, hash_funcs in hash_families.items():
+    sigmatrix = minhash(features, hash_funcs)
+    hash_tables = lsh_hashing(sigmatrix, m, k)
+    total_error = 0
+    for q in Q:
+        Dq = set()
+        for table in hash_tables:
+            for bucket in table.values():
+                if q in bucket:
+                    Dq.update(bucket)
+        for d in Dq:
+            estimated_similarity = jaccard_similarity(
+                feature_sets[q], feature_sets[d])
+            true_similarity = jaccard_similarity(
+                feature_sets[q], feature_sets[d])
+            total_error += abs(true_similarity - estimated_similarity)
+    mae = total_error / (num_articles * len(Q))
+    maes.append(mae)
+
+plt.plot(ks, maes)
+plt.xlabel('k')
+plt.ylabel('MAE')
+plt.show()
+
+
+# B. Compare query times
+Q = list(range(4000, 5001))
+k = 2
+hash_funcs = hash_families[k]
+sigmatrix = minhash(features, hash_funcs)
+hash_tables = lsh_hashing(sigmatrix, m, k)
+print("in 3(B)")
+# Question 2(A)
+start_time = time.time()
+for q in Q:
+    Dq = set()
+    for table in hash_tables:
+        for bucket in table.values():
+            if q in bucket:
+                Dq.update(bucket)
+    similarities = [
+        (d + 1, jaccard_similarity(feature_sets[q-1], feature_sets[d-1])) for d in Dq]
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    print("in 2(A)")
+end_time = time.time()
+print(
+    f"Average query time for Question 2(A): {(end_time - start_time) / len(Q)} ms")
+
+# Question 2(B)
+start_time = time.time()
+for q in Q:
+    similarities = [(d + 1, jaccard_similarity(feature_sets[q-1], feature_sets[d-1]))
+                    for d in range(num_articles)]
+    similarities.sort(key=lambda x: x[1], reverse=True)
+end_time = time.time()
+print(
+    f"Average query time for Question 2(B): {(end_time - start_time) / len(Q)} ms")
