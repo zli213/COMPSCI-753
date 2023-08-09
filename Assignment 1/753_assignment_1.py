@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 filename = 'bitvector_all_1gram.csv'
 df = pd.read_csv(filename, sep='\t', header=None)
 features = df.iloc[:, 1:-1].astype(int).values.T.tolist()
+feature_sets = [set([i for i, x in enumerate(article) if x == 1])
+                for article in zip(*features)]
+movie_genre = pd.Series(df.iloc[:, -1].values, index=df.iloc[:, 0]).to_dict()
 num_articles = len(features[0]) if features else 0
 num_features = len(features)
 print(f"Number of articles: {num_articles}")
@@ -44,15 +47,15 @@ def create_hash_functions(k, n):
 ks = [2, 4, 8, 16]
 hash_families = {k: create_hash_functions(k, num_features) for k in ks}
 
-for col in range(len(features[0])):  # 遍历每一列（即每个文档）
-    for row in range(len(features)):  # 遍历每一行（即每个特征或shingle）
+for col in range(len(features[0])):  # go through each column (each document)
+    for row in range(len(features)):  # go through each row (each feature or shingle)
         if features[row][col] == 1:
             for k, hash_funcs in hash_families.items():
-                print(f"MinHash functions for k={k}, document={col}:")
+                # print(f"MinHash functions for k={k}, document={col}:")
                 for func, a, b in hash_funcs:
                     h_value = func(row)
-                    print(
-                        f"Function with a={a}, b={b} gives h={h_value} for x={row}")
+                    # print(
+                    #     f"Function with a={a}, b={b} gives h={h_value} for x={row}")
 
 # C. Construct LSH hash tables
 
@@ -84,8 +87,6 @@ def create_level_2_hash_functions(k, num_features, m):
         coefficients.insert(0, c_0)  # Inserting c_{i,0} at the beginning
 
         def hash_func(x, coefficients=coefficients):
-            assert len(x) == len(
-                coefficients) - 1, f"Length mismatch: x has {len(x)} elements, coefficients has {len(coefficients)} elements"
             return (sum(coefficients[i+1] * x[i] for i in range(len(x))) + coefficients[0]) % p % m
         hash_funcs.append((hash_func, coefficients))
     return hash_funcs
@@ -96,11 +97,12 @@ def lsh_hashing(sigmatrix, m, k):
     hash_functions = create_level_2_hash_functions(k, num_features, m)
 
     hash_tables = [defaultdict(list) for _ in range(k)]
-    for c in range(len(sigmatrix[0])):  # 遍历每一列（即每个文档）
+    # go through each column (each document)
+    for c in range(len(sigmatrix[0])):
         column_data = [sigmatrix[j][c]
-                       for j in range(len(sigmatrix))]  # 获取整列数据
+                       for j in range(len(sigmatrix))]  # Gain the whole column data
         for i, (hash_func, _) in enumerate(hash_functions):
-            # 使用完整的列数据计算bucket_id
+            # Use the whole column data to calculate bucket_id
             bucket_id = hash_func(column_data)
             hash_tables[i][bucket_id].append(c)
     return hash_tables
@@ -117,38 +119,81 @@ print(
 # D. Compute collision distribution
 collision_distribution = [len(articles)
                           for table in hash_tables for articles in table.values()]
-plt.hist(collision_distribution, bins=range(
-    1, max(collision_distribution) + 1), edgecolor='black')
+
+# Report the summation of articles across buckets
+total_articles = sum(collision_distribution)
+print(f"Total number of articles across all buckets: {total_articles}")
+
+# Plot the histogram
+plt.hist(collision_distribution, bins=m, edgecolor='black')
+plt.xlim(0, m)
+plt.xlabel('Buckets')
+plt.ylabel('Number of colliding articles')
 plt.title('Collision Distribution of Articles into Buckets')
-plt.xlabel('Number of Colliding Articles')
-plt.ylabel('Frequency')
 plt.show()
 
 print("Total number of articles across buckets:", sum(collision_distribution))
 
 # 2. Nearest neighbor search
 
+# def jaccard_similarity(set1, set2):
+#     return len(set1.intersection(set2)) / len(set1.union(set2))
 
-def jaccard_similarity(set1, set2):
+
+# Q = [4996, 4997, 4998, 4999, 5000]
+# movie_genre = pd.Series(df.iloc[:, -1].values, index=df.iloc[:, 0]).to_dict()
+
+# # Pre-compute feature sets for all articles
+# feature_sets = [set([i for i, x in enumerate(article) if x == 1])
+#                 for article in zip(*features)]
+
+# # A. Estimated Jaccard similarity
+# for q in Q:
+#     Dq = set()
+#     for table in hash_tables:
+#         for bucket in table.values():
+#             if q in bucket:
+#                 Dq.update(bucket)
+#     similarities = [
+#         (d + 1, jaccard_similarity(feature_sets[q-1], feature_sets[d-1])) for d in Dq]
+#     similarities.sort(key=lambda x: x[1], reverse=True)
+#     print(
+#         f"Top 5 articles for query {q} based on estimated Jaccard similarity:")
+#     for movie_id, sim in similarities[:5]:
+#         print(f"{movie_id}\t{sim}\t{movie_genre[movie_id]}")
+
+# # B. True Jaccard similarity
+# for q in Q:
+#     similarities = [(d + 1, jaccard_similarity(feature_sets[q-1], feature_sets[d-1]))
+#                     for d in range(num_articles)]
+#     similarities.sort(key=lambda x: x[1], reverse=True)
+#     print(f"Top 5 articles for query {q} based on true Jaccard similarity:")
+#     for movie_id, sim in similarities[:5]:
+#         print(f"{movie_id}\t{sim}\t{movie_genre[movie_id]}")
+
+# Jaccard相似度函数
+def jaccard_similarity(list1, list2):
+    set1 = set(list1)
+    set2 = set(list2)
     return len(set1.intersection(set2)) / len(set1.union(set2))
 
 
-Q = [4996, 4997, 4998, 4999, 5000]
-movie_genre = pd.Series(df.iloc[:, -1].values, index=df.iloc[:, 0]).to_dict()
+def estimated_jaccard(sigmatrix, col1, col2):
+    """Compute the estimated Jaccard similarity between two columns of the signature matrix."""
+    return sum(1 for i in range(len(sigmatrix)) if sigmatrix[i][col1] == sigmatrix[i][col2]) / len(sigmatrix)
 
-# Pre-compute feature sets for all articles
-feature_sets = [set([i for i, x in enumerate(article) if x == 1])
-                for article in zip(*features)]
 
 # A. Estimated Jaccard similarity
+Q = [4996, 4997, 4998, 4999, 5000]
 for q in Q:
     Dq = set()
     for table in hash_tables:
         for bucket in table.values():
             if q in bucket:
                 Dq.update(bucket)
-    similarities = [
-        (d + 1, jaccard_similarity(feature_sets[q-1], feature_sets[d-1])) for d in Dq]
+    similarities = [(d + 1, estimated_jaccard(sigmatrix, q-1, d-1))
+                    for d in Dq]
+
     similarities.sort(key=lambda x: x[1], reverse=True)
     print(
         f"Top 5 articles for query {q} based on estimated Jaccard similarity:")
@@ -169,20 +214,14 @@ for q in Q:
 Q = list(range(4000, 5001))
 maes = []
 for k, hash_funcs in hash_families.items():
+    print(f"Computing MAE for k={k}...")
     sigmatrix = minhash(features, hash_funcs)
-    hash_tables = lsh_hashing(sigmatrix, m, k)
     total_error = 0
     for q in Q:
-        Dq = set()
-        for table in hash_tables:
-            for bucket in table.values():
-                if q in bucket:
-                    Dq.update(bucket)
-        for d in Dq:
-            estimated_similarity = jaccard_similarity(
-                feature_sets[q], feature_sets[d])
+        for d in range(num_articles):
+            estimated_similarity = estimated_jaccard(sigmatrix, q-1, d)
             true_similarity = jaccard_similarity(
-                feature_sets[q], feature_sets[d])
+                feature_sets[q-1], feature_sets[d])
             total_error += abs(true_similarity - estimated_similarity)
     mae = total_error / (num_articles * len(Q))
     maes.append(mae)
@@ -199,7 +238,6 @@ k = 2
 hash_funcs = hash_families[k]
 sigmatrix = minhash(features, hash_funcs)
 hash_tables = lsh_hashing(sigmatrix, m, k)
-print("in 3(B)")
 # Question 2(A)
 start_time = time.time()
 for q in Q:
@@ -209,9 +247,8 @@ for q in Q:
             if q in bucket:
                 Dq.update(bucket)
     similarities = [
-        (d + 1, jaccard_similarity(feature_sets[q-1], feature_sets[d-1])) for d in Dq]
+        (d + 1, estimated_jaccard(sigmatrix, q-1, d-1)) for d in Dq]
     similarities.sort(key=lambda x: x[1], reverse=True)
-    print("in 2(A)")
 end_time = time.time()
 print(
     f"Average query time for Question 2(A): {(end_time - start_time) / len(Q)} ms")
