@@ -191,7 +191,7 @@ class CountSketch:
         for i in range(self.d):
             pos = self.hash_functions[i](x)
             sign = self.sign_functions[i](x)
-            estimates.append(sign * self.table[i][pos])
+            estimates.append(self.table[i][pos])
         return np.median(estimates)
 
 
