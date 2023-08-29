@@ -268,3 +268,64 @@ plt.xticks([i + bar_width / 2 for i in index], ordered_categories, rotation=45)
 plt.legend()
 plt.tight_layout()
 plt.show()
+
+true_frequencies = category_counts
+w_values = [10, 20, 30, 40]
+average_errors = []
+
+for w in w_values:
+    cs = CountSketch(w, depth)
+
+    # Process the stream
+    for item in stream:
+        cs.update(item)
+
+    total_error = 0
+    for category in true_frequencies:
+        estimated_frequency = cs.estimate(category)
+        true_frequency = true_frequencies.get(category, 0)
+        total_error += abs(estimated_frequency - true_frequency)
+
+    avg_error = total_error / len(true_frequencies)
+    average_errors.append(avg_error)
+
+# Plotting
+plt.plot(w_values, average_errors, marker='o')
+plt.xlabel("Bucket Size w")
+plt.ylabel("Average Absolute Error")
+plt.title("Impact of Bucket Size w on Average Absolute Error")
+plt.show()
+
+# 3.D Investigate the impact of the number of hash functions d ∈ {2, 4, 8, 16} to the absolute error across all categories by the Count Sketch Algorithm. Please provide curve plot across varying number of hash functions d, with d as the x-axis and average absolute error of each news category (ci) as the y-axis (Eq.1). Please comment how you would specify the value of d to achieve more accurate estimations.
+d_values = [2, 4, 8, 16]
+results = {}
+for d in d_values:
+    average_errors = []
+    for w in w_values:
+        cs = CountSketch(w, d)
+
+        # Process the stream
+        for item in stream:
+            cs.update(item)
+
+        total_error = 0
+        for category in true_frequencies:
+            estimated_frequency = cs.estimate(category)
+            true_frequency = true_frequencies.get(category, 0)
+            total_error += abs(estimated_frequency - true_frequency)
+
+        avg_error = total_error / len(true_frequencies)
+        average_errors.append(avg_error)
+    results[w] = average_errors
+
+
+# Plotting
+plt.figure(figsize=(12, 8))
+for w, average_errors in results.items():
+    plt.plot(d_values, average_errors, marker='o', label=f'w = {w}')
+plt.xlabel('Number of Hash Functions d')
+plt.ylabel('Average Absolute Error')
+plt.title('Impact of Number of Hash Functions and Width on Average Absolute Error')
+plt.legend()
+plt.grid(True)
+plt.show()
