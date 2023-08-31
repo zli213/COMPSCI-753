@@ -15,10 +15,10 @@ df = pd.read_csv('news_stream.csv', delimiter=',',
 category_counts = df['news_category'].value_counts()
 
 # 1.A Compute the average frequency
-category_frequency = category_counts / len(df)
+category_frequency = category_counts
 average_frequency = category_frequency.mean()
+print("average frequency: ", average_frequency)
 
-print(average_frequency)
 # 1.B Compute the true frequencies of all categories
 # Sort the frequencies in descending order
 sorted_frequency = category_frequency.sort_values(ascending=False)
@@ -67,7 +67,7 @@ plt.bar(sorted_frequencies.keys(), sorted_frequencies.values())
 plt.ylabel('Estimated Frequency')
 plt.xlabel('News Category')
 plt.title('Misra-Gries Estimated Frequencies of News Categories')
-plt.xticks(rotation=45)
+plt.xticks(rotation=90)
 plt.tight_layout()
 plt.show()
 
@@ -77,7 +77,7 @@ plt.figure(figsize=(15, 7))
 categories = list(sorted_frequencies.keys())
 estimated_values = [sorted_frequencies[cat] for cat in categories]
 # Multiply by len(df) to get counts instead of proportions
-true_values = [category_frequency.get(cat, 0) * len(df) for cat in categories]
+true_values = [category_frequency.get(cat, 0) for cat in categories]
 
 bar_width = 0.35
 index = range(len(categories))
@@ -108,6 +108,7 @@ print(f"Number of decrement steps with k={k}: {num_decrements}")
 
 def compute_average_absolute_error(k_values, true_frequencies, stream):
     average_errors = []
+    errors = []
 
     for k in k_values:
         # Run Misra-Gries algorithm with the given k
@@ -117,10 +118,11 @@ def compute_average_absolute_error(k_values, true_frequencies, stream):
         total_error = 0
         for category, true_frequency in true_frequencies.items():
             # Multiply by len(stream) to get counts instead of proportions
-            estimated_frequency = estimated_counts.get(category, 0)/len(stream)
-            total_error += abs(estimated_frequency - true_frequency)
+            estimated_frequency = estimated_counts.get(category, 0)
+            error = abs(estimated_frequency - true_frequency)
+            errors.append(error)
 
-        average_errors.append(total_error / len(true_frequencies))
+        average_errors.append(sum(errors)/len(errors))
 
     return average_errors
 
@@ -190,7 +192,7 @@ class CountSketch:
         estimates = []
         for i in range(self.d):
             pos = self.hash_functions[i](x)
-            sign = self.sign_functions[i](x)
+            # sign = self.sign_functions[i](x)
             estimates.append(self.table[i][pos])
         return np.median(estimates)
 
@@ -218,7 +220,7 @@ plt.bar(sorted_estimated_counts.keys(), sorted_estimated_counts.values())
 plt.ylabel('Estimated Frequency')
 plt.xlabel('News Category')
 plt.title('Count Sketch Estimated Frequencies of News Categories')
-plt.xticks(rotation=45)
+plt.xticks(rotation=90)
 plt.tight_layout()
 plt.show()
 
@@ -256,15 +258,14 @@ index = range(len(ordered_categories))
 
 bar1 = plt.bar(index, estimated_values, bar_width,
                label='Estimated (Count Sketch)', color='b', align='center')
-# bar2 = plt.bar([i + bar_width for i in index], true_values,
-#                bar_width, label='True Frequencies', color='r', align='center')
+
 bar2 = plt.bar([i + bar_width for i in index], true_values,
                bar_width, label='True Frequencies', color='r', align='center')
 
 plt.xlabel('News Category')
 plt.ylabel('Frequency')
 plt.title('Comparison of Estimated (Count Sketch) and True Frequencies')
-plt.xticks([i + bar_width / 2 for i in index], ordered_categories, rotation=45)
+plt.xticks([i + bar_width / 2 for i in index], ordered_categories, rotation=60)
 plt.legend()
 plt.tight_layout()
 plt.show()
