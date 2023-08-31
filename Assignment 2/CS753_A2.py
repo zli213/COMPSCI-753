@@ -1,5 +1,8 @@
+import random
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import time
 
 # Column names
 column_names = ['news_id', 'news_category', 'date']
@@ -12,10 +15,10 @@ df = pd.read_csv('news_stream.csv', delimiter=',',
 category_counts = df['news_category'].value_counts()
 
 # 1.A Compute the average frequency
-category_frequency = category_counts / len(df)
+category_frequency = category_counts
 average_frequency = category_frequency.mean()
+print("average frequency: ", average_frequency)
 
-print(average_frequency)
 # 1.B Compute the true frequencies of all categories
 # Sort the frequencies in descending order
 sorted_frequency = category_frequency.sort_values(ascending=False)
@@ -64,7 +67,7 @@ plt.bar(sorted_frequencies.keys(), sorted_frequencies.values())
 plt.ylabel('Estimated Frequency')
 plt.xlabel('News Category')
 plt.title('Misra-Gries Estimated Frequencies of News Categories')
-plt.xticks(rotation=45)
+plt.xticks(rotation=90)
 plt.tight_layout()
 plt.show()
 
@@ -74,7 +77,7 @@ plt.figure(figsize=(15, 7))
 categories = list(sorted_frequencies.keys())
 estimated_values = [sorted_frequencies[cat] for cat in categories]
 # Multiply by len(df) to get counts instead of proportions
-true_values = [category_frequency.get(cat, 0) * len(df) for cat in categories]
+true_values = [category_frequency.get(cat, 0) for cat in categories]
 
 bar_width = 0.35
 index = range(len(categories))
@@ -105,6 +108,7 @@ print(f"Number of decrement steps with k={k}: {num_decrements}")
 
 def compute_average_absolute_error(k_values, true_frequencies, stream):
     average_errors = []
+    errors = []
 
     for k in k_values:
         # Run Misra-Gries algorithm with the given k
@@ -114,10 +118,11 @@ def compute_average_absolute_error(k_values, true_frequencies, stream):
         total_error = 0
         for category, true_frequency in true_frequencies.items():
             # Multiply by len(stream) to get counts instead of proportions
-            estimated_frequency = estimated_counts.get(category, 0)/len(stream)
-            total_error += abs(estimated_frequency - true_frequency)
+            estimated_frequency = estimated_counts.get(category, 0)
+            error = abs(estimated_frequency - true_frequency)
+            errors.append(error)
 
-        average_errors.append(total_error / len(true_frequencies))
+        average_errors.append(sum(errors)/len(errors))
 
     return average_errors
 
@@ -132,4 +137,196 @@ plt.plot(k_values, average_errors, marker='o')
 plt.xlabel("Summary Size k")
 plt.ylabel("Average Absolute Error")
 plt.title("Impact of Summary Size k on Average Absolute Error")
+plt.show()
+
+# 2.E Investigate the impact of the size of summary k on the run-time by Misra-Gries Approach
+k_values = [10, 20, 30, 40, 50, 60, 70, 80, 100, 200]
+run_times = []
+
+for k in k_values:
+    start_time = time.time()
+    estimated_counts, num_decrements_new = misra_gries(df['news_category'], k)
+    end_time = time.time()
+    run_times.append(end_time - start_time)
+    print(f"Number of decrement steps with k={k}: {num_decrements_new}")
+
+# Plotting the runtime against k values
+plt.figure(figsize=(10, 6))
+plt.plot(k_values, run_times, marker='o')
+plt.xlabel('Summary Size k')
+plt.ylabel('Run-time (seconds)')
+plt.title('Impact of Summary Size k on Run-time by Misra-Gries Approach')
+plt.grid(True)
+plt.show()
+
+# 3. Count Sketch Approach and Performance Evaluation
+# 3.A Implement Count Sketch Algorithm to find the most frequent categories. Please report
+# the plot of the estimated frequencies in descending order to observe the approximation skewness with a summary size of (w = 20,d = 4).
+
+
+class CountSketch:
+    def __init__(self, width, depth):
+        self.w = width
+        self.d = depth
+        self.table = np.zeros((depth, width), dtype=int)
+        self.hash_functions = [self.__generate_hash_function()
+                               for _ in range(depth)]
+        self.sign_functions = [self.__generate_sign_function()
+                               for _ in range(depth)]
+
+    def __generate_hash_function(self):
+        a, b = random.randint(1, 2**31 - 1), random.randint(0, 2**31 - 1)
+        p = 2**31 - 1
+        return lambda x: (a * hash(x) + b) % p % self.w
+
+    def __generate_sign_function(self):
+        return lambda x: 1 if hash(x) % 2 == 0 else -1
+
+    def update(self, x):
+        for i in range(self.d):
+            pos = self.hash_functions[i](x)
+            sign = self.sign_functions[i](x)
+            self.table[i][pos] += sign
+
+    def estimate(self, x):
+        estimates = []
+        for i in range(self.d):
+            pos = self.hash_functions[i](x)
+            # sign = self.sign_functions[i](x)
+            estimates.append(self.table[i][pos])
+        return np.median(estimates)
+
+
+# Load your data
+df = pd.read_csv('news_stream.csv', delimiter=',',
+                 header=None, names=column_names)
+stream = df['news_category']
+
+# Apply Count Sketch
+width, depth = 20, 4
+cs = CountSketch(width, depth)
+for x in stream:
+    cs.update(x)
+
+# Get the estimated frequencies
+categories = df['news_category'].unique()
+estimated_counts = {category: cs.estimate(category) for category in categories}
+sorted_estimated_counts = dict(
+    sorted(estimated_counts.items(), key=lambda item: item[1], reverse=True))
+
+# Plot the estimated frequencies
+plt.figure(figsize=(12, 6))
+plt.bar(sorted_estimated_counts.keys(), sorted_estimated_counts.values())
+plt.ylabel('Estimated Frequency')
+plt.xlabel('News Category')
+plt.title('Count Sketch Estimated Frequencies of News Categories')
+plt.xticks(rotation=90)
+plt.tight_layout()
+plt.show()
+
+# Assuming you've loaded your data and defined the CountSketch class as above
+
+# Apply Count Sketch
+width, depth = 20, 4
+cs = CountSketch(width, depth)
+for x in stream:
+    cs.update(x)
+
+# Get the estimated frequencies
+categories = df['news_category'].unique()
+estimated_counts = {category: cs.estimate(category) for category in categories}
+sorted_estimated_counts = dict(
+    sorted(estimated_counts.items(), key=lambda item: item[1], reverse=True))
+
+# Fetch the true frequencies from Q1(B)
+sorted_true_frequencies = category_counts.sort_values(ascending=False)
+
+# Plot the estimated and true frequencies
+plt.figure(figsize=(15, 7))
+
+# Extract ordered categories from estimated frequencies
+ordered_categories = list(sorted_estimated_counts.keys())
+
+# Create the estimated and true values lists
+estimated_values = [sorted_estimated_counts[category]
+                    for category in ordered_categories]
+true_values = [sorted_true_frequencies.get(
+    category, 0) for category in ordered_categories]
+
+bar_width = 0.35
+index = range(len(ordered_categories))
+
+bar1 = plt.bar(index, estimated_values, bar_width,
+               label='Estimated (Count Sketch)', color='b', align='center')
+
+bar2 = plt.bar([i + bar_width for i in index], true_values,
+               bar_width, label='True Frequencies', color='r', align='center')
+
+plt.xlabel('News Category')
+plt.ylabel('Frequency')
+plt.title('Comparison of Estimated (Count Sketch) and True Frequencies')
+plt.xticks([i + bar_width / 2 for i in index], ordered_categories, rotation=60)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+true_frequencies = category_counts
+w_values = [10, 20, 30, 40]
+average_errors = []
+
+for w in w_values:
+    cs = CountSketch(w, depth)
+
+    # Process the stream
+    for item in stream:
+        cs.update(item)
+
+    total_error = 0
+    for category in true_frequencies:
+        estimated_frequency = cs.estimate(category)
+        true_frequency = true_frequencies.get(category, 0)
+        total_error += abs(estimated_frequency - true_frequency)
+
+    avg_error = total_error / len(true_frequencies)
+    average_errors.append(avg_error)
+
+# Plotting
+plt.plot(w_values, average_errors, marker='o')
+plt.xlabel("Bucket Size w")
+plt.ylabel("Average Absolute Error")
+plt.title("Impact of Bucket Size w on Average Absolute Error")
+plt.show()
+
+# 3.D Investigate the impact of the number of hash functions d ∈ {2, 4, 8, 16} to the absolute error across all categories by the Count Sketch Algorithm. Please provide curve plot across varying number of hash functions d, with d as the x-axis and average absolute error of each news category (ci) as the y-axis (Eq.1). Please comment how you would specify the value of d to achieve more accurate estimations.
+d_values = [2, 4, 8, 16]
+results = {}
+for d in d_values:
+    average_errors = []
+    for w in w_values:
+        cs = CountSketch(w, d)
+
+        # Process the stream
+        for item in stream:
+            cs.update(item)
+
+        total_error = 0
+        for category in true_frequencies:
+            estimated_frequency = cs.estimate(category)
+            true_frequency = true_frequencies.get(category, 0)
+            total_error += abs(estimated_frequency - true_frequency)
+
+        avg_error = total_error / len(true_frequencies)
+        average_errors.append(avg_error)
+    results[w] = average_errors
+
+
+# Plotting
+plt.figure(figsize=(12, 8))
+for w, average_errors in results.items():
+    plt.plot(d_values, average_errors, marker='o', label=f'w = {w}')
+plt.xlabel('Number of Hash Functions d')
+plt.ylabel('Average Absolute Error')
+plt.title('Impact of Number of Hash Functions and Width on Average Absolute Error')
+plt.legend()
+plt.grid(True)
 plt.show()
