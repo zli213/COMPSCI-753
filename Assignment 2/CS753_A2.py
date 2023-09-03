@@ -1,4 +1,3 @@
-import random
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -98,7 +97,6 @@ plt.show()
 # 2.C Report the actual number of decrement steps
 # Print the number of rows in the dataset
 print(f"Number of rows in the dataset: {len(df)}")
-
 print(f"Number of decrement steps with k={k}: {num_decrements}")
 
 # 2.D
@@ -167,7 +165,7 @@ category_to_index = {category: idx for idx,
                      category in enumerate(category_counts.index)}
 
 
-class ModifiedCountSketchWithMapping:
+class CountSketchWithMapping:
     def __init__(self, w, d):
         self.w = w
         self.d = d
@@ -199,7 +197,7 @@ class ModifiedCountSketchWithMapping:
 
 
 # Initialize Modified CountSketch with mapping with w=20 and d=4
-mcs_mapped = ModifiedCountSketchWithMapping(w=20, d=4)
+mcs_mapped = CountSketchWithMapping(w=20, d=4)
 
 # Add items to the Modified CountSketch table
 for category in df.iloc[:, 1]:
@@ -226,7 +224,7 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-# 3.B Compare the estimated frequency of all categories with their true frequencies from Q1(B). In particular, please provide a curve plot for all categories, displaying (1) the estimated frequencies by the Count Sketch Algorithm in descending order with (w = 20, d = 4), and (2) their corresponding true frequencies. (Note: x-axis as categories, y-axis as frequency, and two distributions.)
+# 3.B Compare the estimated frequency of all categories with their true frequencies from Q1(B).
 # Fetch the true frequencies from Q1(B)
 sorted_true_frequencies = category_counts.sort_values(ascending=False)
 # Plot the estimated and true frequencies
@@ -265,7 +263,7 @@ average_errors_w = []
 
 for w in bucket_sizes:
     # Initialize Modified CountSketch with mapping for each w
-    mcs_temp = ModifiedCountSketchWithMapping(w=w, d=4)
+    mcs_temp = CountSketchWithMapping(w=w, d=4)
 
     # Add items to the Modified CountSketch table
     for category in df.iloc[:, 1]:
@@ -280,7 +278,6 @@ for w in bucket_sizes:
               for category in category_counts.index]
     # average_errors_w.append(np.mean(errors))
     average_errors_w.append(sum(errors)/len(errors))
-
 
 # Plotting the impact of w on average absolute error
 plt.figure(figsize=(10, 6))
@@ -300,7 +297,7 @@ average_errors_d = []
 
 for d in hash_functions_counts:
     # Initialize Modified CountSketch with mapping for each d
-    mcs_temp = ModifiedCountSketchWithMapping(w=20, d=d)
+    mcs_temp = CountSketchWithMapping(w=20, d=d)
 
     # Add items to the Modified CountSketch table
     for category in df.iloc[:, 1]:
@@ -315,7 +312,6 @@ for d in hash_functions_counts:
               for category in category_counts.index]
     # average_errors_d.append(np.mean(errors))
     average_errors_d.append(sum(errors)/len(errors))
-
 
 # Plotting the impact of d on average absolute error
 plt.figure(figsize=(10, 6))
