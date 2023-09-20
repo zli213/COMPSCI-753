@@ -41,7 +41,7 @@ def misra_gries(stream, k):
     for item in stream:
         if item in counters:
             counters[item] += 1
-        elif len(counters) < k - 1:
+        elif len(counters) < k:
             counters[item] = 1
         else:
             decrement_steps += 1  # Increment the counter when decrementing all items
